@@ -1,0 +1,761 @@
+
+<html>
+	<head>
+		<meta charset = "UTF-8">
+		<!-- Including CSS & jQuery Dialog UI Here-->
+		<link href="jquery-ui.css" rel="stylesheet">
+		<style>
+			.tooltipclass{
+			    background-color: black;
+			    color: white;
+			}
+		</style>
+		<script type="text/javascript" src = "jquery-1.8.3.min.js"></script>
+		<script type="text/javascript" src = "jquery-ui.min.js"></script>
+		<script type="text/javascript" src = "interact.min.js"></script>
+		<script type="text/javascript">
+
+				var areas = {};
+
+				function getMatrix(s){
+					var j = 0;
+			    	var matrix = [0,0,0,0,0,0];
+			    	for(var i = 7;i<s.length;i++){
+			    		var n = "";
+			    		while(s[i] != " " && s[i] != ")"){
+			    			n += s[i];
+			    			i++;
+			    		}
+			    		if(n != ""){
+			    			matrix[j++] = parseFloat(n);
+			    		}
+			    		
+			    	}
+					return matrix;
+				}
+
+				function getString(matrix){
+					var resultString = "";
+			    	for(var i=0;i<6;i++){
+			    		resultString += matrix[i] + " ";
+			    	}
+					return resultString;
+				}
+
+				function transformCoords(x, y, matrix){
+					var newX = (matrix[0] * x) + (matrix[2] * y) + matrix[4];
+					var newY = (matrix[1] * x) + (matrix[3] * y) + matrix[5];
+					return [newX, newY];
+				}
+
+				function rotate(shape, theta){
+					var x = shape.getAttribute("x");
+					var y = shape.getAttribute("y");
+
+					var transform = shape.getAttribute("transform");
+					matrix = getMatrix(transform);
+					var newCoords = transformCoords(x, y, matrix);
+
+					var translationMatrix = [1, 0, 0, 1, -1 * newCoords[0], -1 * newCoords[1]];
+					var rotationMatrix = [Math.cos(toRadians(theta)),Math.sin(toRadians(theta)),-1*Math.sin(toRadians(theta)),
+								Math.cos(toRadians(theta)),0,0];
+					var reverseTranslate = [1, 0, 0, 1, newCoords[0], newCoords[1]];
+					var result = matrixMul(rotationMatrix, translationMatrix);
+					result = matrixMul(reverseTranslate, result);
+					
+					var newTransform = matrixMul(result, matrix);
+					var resultString = getString(newTransform);
+					shape.setAttribute("transform", "matrix(" + resultString + ")");
+
+				}
+  				function matrixMul(mat1, mat2){
+  					var m1 = (mat1[0] * mat2[0]) + (mat1[2] * mat2[1]);
+  					var m2 = (mat1[1] * mat2[0]) + (mat1[3] * mat2[1]);
+  					var m3 = (mat1[0] * mat2[2]) + (mat1[2] * mat2[3]);
+  					var m4 = (mat1[1] * mat2[2]) + (mat1[3] * mat2[3]);
+  					var m5 = (mat1[0] * mat2[4]) + (mat1[2] * mat2[5]) + 
+  						(mat1[4]);
+  					var m6 = (mat1[1] * mat2[4]) + (mat1[3] * mat2[5]) + 
+  						(mat1[5]);
+  					return [m1, m2, m3, m4, m5, m6];
+  				}
+				function toRadians (angle) {
+ 		 			return angle * (Math.PI / 180);
+				}
+				function click(obj){
+					//alert(obj.getAttribute("id") + " " + getSeatStatus(obj.getAttribute("id")));
+				}
+				function createLayout(layoutName, nFloors){
+					if(layoutName != ""){
+						if(nFloors != NaN && nFloors > 0){
+							document.getElementById("floor").innerHTML += "<option value = 'all'>all</option>";
+							for(var i = 1; i <= nFloors; i++){
+								document.getElementById("floorNumber").innerHTML += "<option value = '" + i + "'>" + i + "</option>";
+								document.getElementById("floor").innerHTML += "<option value = '" + i + "'>" + i + "</option>";
+							}
+							$("#drawingLayout").show();
+							$("#layoutDialog").dialog("close");
+							$("#newLayout").hide();
+							return true;
+						}
+						else{
+							alert("Number of floors can't be ZERO");
+							return false;
+						}
+					}
+					else{
+						alert("Layout Name is needed.");
+						return false;
+					}
+				}
+
+					
+				function controlDragListener(event){
+					var control = event.target;
+					var dx = event.dx;
+					var dy = event.dy;
+					var x = control.getAttribute("x") * 1;
+					var y = control.getAttribute("y") * 1;
+
+					var coords = transformCoords(x, y, [1, 0, 0, 1, dx, dy]);
+					coords[0] = coords[0] == 0 ? 1 : coords[0];
+					coords[1] = coords[1] == 0 ? 1 : coords[1];
+					control.setAttribute("x", coords[0]);
+					control.setAttribute("y", coords[1]);
+					var areaName = $("#areas").val();
+					var zoneName = ".....";
+					if(document.getElementById(areaName + "#" + zoneName)){
+						remove(document.getElementById(areaName + "#" + zoneName));
+					}
+					var type = $("#type").val();
+					$("#control1").val(coords[0]);
+					$("#control2").val(type == "arc" ? 0.25 * coords[1] : coords[1]);
+					if(draw(zoneName)){
+						var svgX = $("#mainShape").offset().left;
+						var svgY = $("#mainShape").offset().top;
+						var mouseX = event.pageX;
+						var mouseY = event.pageY;
+						var relativeX = mouseX - svgX;
+						var relativeY = mouseY - svgY;
+						var shape =	document.getElementById(areaName + "#" + zoneName); 
+						var shapeX = shape.getAttribute("x");
+						var shapeY = shape.getAttribute("y");
+						translate(shape, 0, relativeY - shapeY);
+					}
+				}
+				function shapeDragListener(event){
+					var dx = event.dx;
+					var dy = event.dy;
+					var obj = event.target;
+					translate(obj, dx, dy);
+				}
+
+				var state = 1;
+				$(document).ready(function() {
+
+							$( document ).tooltip({ track: true, tooltipClass: 'tooltipclass'});
+
+
+							interact("#control").draggable({
+		    					inertia: true,
+		    					restrict: {
+		      					restriction: "parent",
+		      					endOnly: true,
+		      					elementRect: { top: 0, left: 0, bottom: 1, right: 1 }
+		    				},
+		    				autoScroll: true,
+		   	 				onmove: controlDragListener,
+		  					});
+						
+							interact("#mainShape").draggable({
+		    					inertia: true,
+		    					restrict: {
+		      					//restriction: "parent",
+		      					endOnly: true,
+		      					elementRect: { top: 0, left: 0, bottom: 1, right: 1 }
+		    				},
+		    				autoScroll: true,
+		   	 				onmove: shapeDragListener,
+		  					});
+
+						$("#drawingLayout").hide();
+						$("#layoutDialog").dialog({
+							autoOpen: false,
+						});
+						$("#zoneDialog").dialog({
+							autoOpen: false,
+						});
+						$("#areaDialog").dialog({
+							autoOpen: false
+						});
+						$("#newLayout").click(function(){
+							$("#layoutDialog").dialog("open");
+						});
+						$("#start").click(function(){
+							var layoutName = $("#layoutName").val();
+							var nFloors = $("#nFloors").val() * 1;
+							createLayout(layoutName, nFloors);
+						});
+						$("#createZone").click(function() {
+							$("#zoneDialog").dialog("open");
+							state = 1;
+						});
+						$("#createArea").click(function() {
+							$("#areaDialog").dialog("open");
+						});
+						$("#addArea").click(function() {
+							var areaName = $("#areaName").val();
+							var floorNumber = $("#floorNumber").val();
+							var success = createArea(areaName, floorNumber);
+							if(success){
+								$("#areaName").val("");
+								$("#floorNumber :nth-child(1)").attr('selected', true);
+								$("#areaDialog").dialog("close");
+							}
+						});
+						$("#floorFilter").click(function() {
+							var val = $("#floor").val();							
+							filterByFloor(areas, val);
+						});
+						$("#draw").click(function() {
+							var zoneName = $("#zoneName").val();
+							if(draw(zoneName)){
+								var areaName = $("#areas").val();
+								var zoneName = ".....";
+								remove(document.getElementById(areaName + "#" + zoneName));
+								state = 2; 
+								$('#zoneName').val("");
+								$('#type :nth-child(1)').prop('selected', true);
+								$("#height").val("");
+								$("#width").val("");
+								$('#areas :nth-child(1)').prop('selected', true);;
+								$('#rowStrategy :nth-child(1)').prop('selected', true);
+								$('#colStrategy :nth-child(1)').prop('selected', true);
+								$("#control1").val("");
+								$("#control2").val("");
+								$("#zoneDialog").dialog("close");
+							}
+						});
+						$("#draw").hover(function(event) {
+							if(state == 1){
+								var zoneName = ".....";
+								var svgX = $("#mainShape").offset().left;
+								var svgY = $("#mainShape").offset().top;
+								var mouseX = event.pageX;
+								var mouseY = event.pageY;
+								var relativeX = mouseX - svgX;
+								var relativeY = mouseY - svgY;
+								if(draw(zoneName)){
+									var areaName = $("#areas").val();
+									var shape =	document.getElementById(areaName + "#" + zoneName); 
+									var shapeX = shape.getAttribute("x");
+									var shapeY = shape.getAttribute("y");
+
+									translate(shape, 0, relativeY - shapeY);
+									state = 0;
+								}	
+							}
+						});
+						$("#control").mouseout(function() {
+							var areaName = $("#areas").val();
+							var zoneName = ".....";
+							if(document.getElementById(areaName + "#" + zoneName)){
+								remove(document.getElementById(areaName + "#" + zoneName));
+							}
+						});
+						$("#draw").mouseout(function() {
+							if(state == 0){
+								var areaName = $("#areas").val();
+								var zoneName = ".....";
+								remove(document.getElementById(areaName + "#" + zoneName));
+								state = 1; 
+							}
+						});
+						$("#nFloors , #width , #height , #control1 , #control2").keydown(function(event){
+							var keyCode = event.which;
+							var keyChar = String.fromCharCode(keyCode);
+							if(("0123456789").indexOf(keyChar) == -1  && keyCode != null && 
+								keyCode != 0 && keyCode != 8 && keyCode != 9 && keyCode != 13 && keyCode != 27){
+								event.preventDefault();
+							}
+						});
+				});
+				function createArea(areaName, floorNumber){
+					if(areas[areaName] == null && areaName != ""){
+						areas[areaName] = {"floor" : floorNumber, "zones" : {}};
+						document.getElementById("areas").innerHTML += "<option value = '" + areaName + "'> " + areaName + "</option>";
+						return true;
+					}
+					else if(areaName == ""){
+						alert("Name field is required.");
+						return false;
+					}
+					else{
+						alert("An area with this name already exists.");
+						return false;
+					}
+				}
+				function createZone(zoneName, areaName){
+					if(areas[areaName]["zones"][areaName + "#" + zoneName] == null){
+						areas[areaName]["zones"][areaName + "#" + zoneName] = {"seats":{}};
+						return true;
+					}
+					else{
+						return false;
+					}
+				}
+				function getSeatStatus(s){
+					var id = s;
+					var i = s.indexOf('#');
+					var areaName = s.substring(0, i);
+					s = s.substring(i + 1, s.length);
+					i = s.indexOf('#');
+					var zoneName = s.substring(0, i);
+					s = s.substring(i + 1, s.length);
+					i = s.indexOf('#');
+					var row = s.substring(0, i);
+					var col = s.substring(i + 1, s.length);
+					var zoneID = areaName + "#" + zoneName;
+					return areas[areaName]["zones"][zoneID]["seats"][id];
+				}
+				function getPositionInStrategy(strategy, n){
+					//alert(strategy + " " + n)
+					n *= 1;
+					switch(strategy){
+						case '1': return n; // numbers
+						case '2': return (n * 2); // evens
+						case '3': return (n * 2) - 1; // odds
+						case '4': return String.fromCharCode(('A').charCodeAt(0) + n - 1);; // alphabet
+					}
+				}
+				function createID(zoneID, rowStrategy, colStrategy, i, j){
+					var y = getPositionInStrategy(rowStrategy, i);
+					var x = getPositionInStrategy(colStrategy, j);
+					return zoneID + "#" + y + "#" + x; 
+				}
+				function makeDraggable(id){
+					interact("[id = '" + id + "']").draggable({
+	    					inertia: true,
+	    					restrict: {
+	      					restriction: "parent",
+	      					endOnly: true,
+	      					elementRect: { top: 0, left: 0, bottom: 1, right: 1 }
+	    				},
+	    				autoScroll: true,
+	   	 				onmove: dragMoveListener,
+	  				});
+				}
+				function dragMoveListener (event) {
+				    var target = event.target;
+				 	if($("#hidden").val() == "rotate"){
+				 		rotate(target, (event.dx + event.dy));
+				 	}
+				 	else{
+				    	translate(target, event.dx, event.dy);
+				 	}
+				 	var zoneID = target.getAttribute("id");
+				 	var areaName = zoneID.substring(0, zoneID.indexOf("#"));
+				 	areas[areaName]["zones"][zoneID]["matrix"] = target.getAttribute("transform");
+				    
+				}
+				function translate(target, dx, dy){
+					var transform = target.getAttribute("transform");
+			    	matrix = getMatrix(transform);
+			    	result = matrixMul([1, 0, 0, 1, dx, dy], matrix);
+			    	var resultString = getString(result);
+			    	target.setAttribute("transform", "matrix(" + resultString + ")");
+				}
+				function scale(obj, factor){
+					var scaleMatrix = [factor, 0, 0, factor, 0, 0];
+					var transform = obj.getAttribute("transform");
+					var matrix = getMatrix(transform);
+					var result = matrixMul(scaleMatrix, matrix);
+					obj.setAttribute("transform", "matrix(" + getString(result) + ")");
+				}
+				function zoomIn(){
+					var obj = document.getElementById("mainShape");
+					scale(obj, 1.1);
+				}
+				function zoomOut(){
+					var obj = document.getElementById("mainShape");
+					scale(obj, 0.9);
+				}
+				function remove(obj){
+					var zoneID = obj.getAttribute("id");
+					obj.remove();
+					var areaName = zoneID.substring(0,zoneID.indexOf('#'));
+					var zoneName = zoneID.substring(zoneID.indexOf('#') + 1, zoneID.length);
+					delete areas[areaName]["zones"][zoneID];
+				}
+				function clickHandler(obj){
+					if($("#remove").val() * 1 == 1){
+						remove(obj);	
+					}
+				}
+				function removeMode(){
+					$("#remove").val(1 - ($("#remove").val() * 1));
+				}
+
+				function rotateMode(){
+				  	$("#hidden").val("rotate");
+				}
+
+				function translateMode(){
+				  	$("#hidden").val("translate");
+				}
+				var jsonCopy = {};
+				function save(){
+					jsonCopy = $.extend(true,{}, areas);
+					console.log(JSON.stringify(areas));
+				}
+				function load(jsonObject){
+					$.each(jsonObject,function(areaName, areaData){
+						$.each(areaData["zones"], function(zoneID, zoneData){
+							var width = zoneData["width"];
+							var height = zoneData["height"];
+							var width = zoneData["width"];
+							var control1 = zoneData["control1"];
+							var control2 = zoneData["control2"];
+							var x = zoneData["x"];
+							var y = zoneData["y"];
+							var matrix = zoneData["matrix"];
+							var rowStrategy = zoneData["rowStrategy"];
+							var colStrategy = zoneData["colStrategy"];
+							ids = [];
+							$.each(zoneData["seats"], function(seatID, seatData){
+								ids.push(seatID);
+							});
+							if(zoneData["type"] == "arc"){
+								pureDrawArc(ids, width, height, x, y, 400, 90, control1, control2, areaName, zoneID, matrix, rowStrategy, colStrategy);
+							}
+							else{
+								pureDrawRectangle(ids, width, height, 0, 200, x, y, control1, control2, areaName, zoneID, matrix, rowStrategy, colStrategy);
+							}
+						});
+					});
+					areas = $.extend(true,{}, jsonCopy);
+				}
+				function filterByFloor(jsonObject, floor){
+					$.each(jsonObject,function(areaName, areaData){
+						if(areaData["floor"] * 1 == floor * 1 || floor == "all"){
+							$.each(areaData["zones"], function(zoneID, zoneData){
+								if(!document.getElementById("zoneID")){
+									var width = zoneData["width"];
+									var height = zoneData["height"];
+									var control1 = zoneData["control1"];
+									var control2 = zoneData["control2"];
+									var x = zoneData["x"];
+									var y = zoneData["y"];
+									var matrix = zoneData["matrix"];
+									var rowStrategy = zoneData["rowStrategy"];
+									var colStrategy = zoneData["colStrategy"];
+									ids = [];
+									$.each(zoneData["seats"], function(seatID, seatData){
+										ids.push(seatID);
+									});
+									if(zoneData["type"] == "arc"){
+										pureDrawArc(ids, width, height, x, y, 400, 90, control1, control2, areaName, zoneID, matrix, rowStrategy, colStrategy);
+									}
+									else{
+										pureDrawRectangle(ids, width, height, 0, 200, x, y, control1, control2, areaName, zoneID, matrix, rowStrategy, 
+											colStrategy);
+									}
+								}
+							});
+						}
+						else{
+							$.each(areaData["zones"], function(zoneID, zoneData){
+								if(document.getElementById(zoneID)){
+									document.getElementById(zoneID).remove();
+								}
+							});
+						}		
+					});
+				}
+				function testLoad(){
+					load(jsonCopy);
+				}
+				
+				function numIsValid(x){
+					x *= 1;
+					if(x != 0 && x != NaN){
+						return true;
+					}
+					return false;
+				}
+				function draw(zoneName){
+					var type = $("#type").val();
+					var height = $("#height").val();
+					var width = $("#width").val();
+					var areaName = $("#areas").val();
+					var rowStrategy = $("#rowStrategy").val();
+					var colStrategy = $("#colStrategy").val();
+					var zoneID = areaName + "#" + zoneName;
+					var control1 = $("#control1").val();
+					var control2 = $("#control2").val();
+					if(numIsValid(height) && numIsValid(width) && numIsValid(control1) && numIsValid(control2) && zoneName != "" && areaName != ""){
+						if(createZone(zoneName, areaName)){
+							if(type == "rectangle"){
+								var w = $("#control1").val();
+								var h = $("#control2").val();
+								drawRectangle(width, height, w, h, rowStrategy, colStrategy, areaName, zoneID);
+							}
+							else{
+								var delta = $("#control1").val() * 1;
+								var deltaTheta = $("#control2").val() * 1;
+								drawArc(width, height, delta, deltaTheta, rowStrategy, colStrategy, areaName, zoneID);
+							}
+							return true;
+						}
+						else{
+							alert("A zone with this name in already found in area: " + areaName);
+							return false;
+						}
+					}
+					else{
+						alert("All fields are required");
+						return false;
+					}
+				}
+
+				function drawArc(width, height, delta, deltaTheta, rowStrategy, colStrategy, areaName, zoneID){
+					areas[areaName]["zones"][zoneID]["type"] = "arc";
+					var r = 400;
+					var theta = 90;
+					var avgTheta = theta - ((width / 2) * deltaTheta);
+					var xCenter = (r - ((delta) * (height/2))) * Math.cos(toRadians(avgTheta));
+					var yCenter = (r - ((delta) * (height/2))) * Math.sin(toRadians(avgTheta));
+					addDrawingData(areaName, zoneID, xCenter, yCenter, width, height, delta, deltaTheta, rowStrategy, colStrategy);
+					var s = "";
+					var ids = [];
+					for(var i = height; i >= 1; i--){	
+						for(var j = 1;j<=width;j++){
+							var id = createID(zoneID, rowStrategy, colStrategy, i, j);
+							ids.push(id);
+							areas[areaName]["zones"][zoneID]["seats"][id] = "0";
+						}
+					}
+					pureDrawArc(ids,width, height, xCenter, yCenter, r, theta, delta, deltaTheta, areaName, zoneID, "matrix(1 0 0 1 0 0 )", rowStrategy, colStrategy);	
+				}
+					
+				function pureDrawArc(ids, width, height, xCenter, yCenter, r, theta, delta, deltaTheta, areaName, zoneID, matrix, rowStrategy, colStrategy){
+					drawShapeContainer(xCenter, yCenter, matrix, zoneID);
+					makeDraggable(zoneID);
+					var thetaCopy = theta;
+					var cx = 0;
+					var cy = 0;
+					var s = "";
+					var k = 0;
+					var r2 = r - delta;
+					for(var i = height; i >= 1; i--){
+						s = addTextUnit(getPositionInStrategy(rowStrategy, i), cx, cy + r2, s);
+						r2 -= delta;
+					}
+					thetaCopy -= deltaTheta;
+					theta = thetaCopy;
+					for(var i = 1; i <= width; i++){
+						var x = r2 * Math.cos(toRadians(theta)) + cx;
+						var y = r2 * Math.sin(toRadians(theta)) + cy;
+						s = addTextUnit(getPositionInStrategy(colStrategy, i), x, y, s);
+						theta -= deltaTheta;
+					}
+					
+					for(var i = height; i >= 1; i--){
+						var prevX = r * Math.cos(toRadians(thetaCopy)) + cx;
+						var prevY = r * Math.sin(toRadians(thetaCopy)) + cy;
+						theta = thetaCopy;
+						for(var j = 1; j <= width; j++){
+							theta -= deltaTheta;
+							var x = r * Math.cos(toRadians(theta)) + cx;
+							var y = r * Math.sin(toRadians(theta)) + cy;
+							var x1 = (r - delta) * Math.cos(toRadians(theta)) + cx;
+							var y1 = (r - delta) * Math.sin(toRadians(theta)) + cy;
+							var x2 = (r - delta) * Math.cos(toRadians(theta + deltaTheta)) + cx;
+							var y2 = (r - delta) * Math.sin(toRadians(theta + deltaTheta)) + cy;
+							s = addArcUnit(prevX, prevY, r, x, y, x1, y1, x2, y2, delta, ids[k++], s);
+							prevX = x;
+							prevY = y;
+						}
+						r -= delta;
+					}
+					var zone = document.getElementById(zoneID);
+					zone.innerHTML += s;
+				}
+				function drawRectangle(width, height, w, h, rowStrategy, colStrategy, areaName, zoneID){
+					var startX = 0;
+					var startY = 200;
+					var x = (width * w / 2) + startX;
+					var y = (height * h / 2) + startY;
+					areas[areaName]["zones"][zoneID]["type"] = "rectangle";
+					addDrawingData(areaName, zoneID, x, y, width, height, w, h, rowStrategy, colStrategy);
+					var ids = [];
+					for (var i = 1; i <= height; i++) {
+						for(var j = 1; j <= width; j++){
+							var id = createID(zoneID, rowStrategy, colStrategy, i, j);
+							ids.push(id);
+							areas[areaName]["zones"][zoneID]["seats"][id] = "0";
+						}
+					}
+					pureDrawRectangle(ids, width, height ,startX, startY, x, y , w, h, areaName, zoneID, "matrix(1 0 0 1 0 0 )", rowStrategy, colStrategy);
+				}
+				function pureDrawRectangle(ids, width, height, startX, startY, x, y, w, h, areaName, zoneID, matrix, rowStrategy, colStrategy){
+					drawShapeContainer(x, y, matrix, zoneID);
+					makeDraggable(zoneID);
+					var zone = document.getElementById(zoneID);
+					var s = "";
+					var k = 0;
+					
+					for(var i = 1; i <= height; i++){
+						var pos = getPositionInStrategy(rowStrategy, i); 
+						s = addTextUnit(pos, startX, startY + (i * h), s);
+					}
+					for(var i = 1; i <= width; i++){
+						var pos = getPositionInStrategy(colStrategy, i); 
+						s = addTextUnit(pos, startX + (i * w), startY, s);
+					}
+					zone.innerHTML += s;
+					for (var i = 1; i <= height; i++) {
+						for(var j = 1; j <= width; j++){
+							s = addRectUnit(startX + (j * w), startY + (i * h), w, h, ids[k++], s);
+						}
+					}
+					
+					zone.innerHTML += s;
+				}
+				function addTextUnit(text, x, y, s){
+					var a = "<text font-family = 'T' x = '" + x + "' y = '" + y + "'>" + text + "</text>";
+					return s + a;
+				}
+				function addArcUnit(prevX, prevY, r, x, y, x1, y1, x2, y2, delta, id, s){
+					var a = "<path id = '" + id + "' title = '" + id + "' onclick = 'click(this)' stroke-width = '2' fill = 'red' stroke = 'blue' d='M" + prevX + " " + prevY + " A" +
+							 r + " " + r + " 0 0 0 " + x + " " + y + 
+							" L" + x1 + " " + y1 + " A" + (r - delta) + " " + (r - delta) + " 0 0 1 " + x2 + " " + y2 + " Z'/>";
+					return s + a;
+				}
+				function addRectUnit(x, y, w, h, id, s){
+					var a = "<rect  id = '" + id + "' title = '" + id + "' onclick = 'click(this)'  x = '" + x + "' y = '" + y + 
+						"' width = '" + w + "' height = '" + h + "' fill = 'red' stroke = 'blue' stroke-width = '2'\
+		 				transform = 'matrix(1 0 0 1 0 0)' />";
+		 			return s + a;
+				}
+				function addDrawingData(areaName, zoneID, x, y, width, height, control1, control2, rowStrategy, colStrategy){
+					areas[areaName]["zones"][zoneID]["x"] = x;
+					areas[areaName]["zones"][zoneID]["y"] = y;
+					areas[areaName]["zones"][zoneID]["matrix"] = "matrix(1 0 0 1 0 0)";
+					areas[areaName]["zones"][zoneID]["width"] = width;
+					areas[areaName]["zones"][zoneID]["height"] = height;
+					areas[areaName]["zones"][zoneID]["control1"] = control1;
+					areas[areaName]["zones"][zoneID]["control2"] = control2;
+					areas[areaName]["zones"][zoneID]["rowStrategy"] = rowStrategy;
+					areas[areaName]["zones"][zoneID]["colStrategy"] = colStrategy;
+				}
+				function drawShapeContainer(x, y, matrix, zoneID){
+					document.getElementById("mainShape").innerHTML += "<g  x = " + x + " y = " + y + " id = '" + zoneID + "' transform = '" + matrix + "' onclick = 'clickHandler(this)'></g>";
+				}
+				function coords(event){
+					alert($(event.target).offset().left + " " + $(event).pageX);
+				}
+		</script>
+	</head>
+	<body>
+		<div class="container">
+		<div class="main">
+			<div id="zoneDialog" title="Dialog Form">
+					<label>Zone Name:</label>
+					<input id="zoneName" type="text">
+					
+					<label>Area:</label>
+					<select id="areas"></select></br>
+
+					<label>Type:</label>
+					<select id="type">
+						<option value = "arc">Arc</option>
+						<option value = "rectangle">Rectangle</option>
+					</select></br>
+
+					<label>Number of rows:</label>
+					<input id="height" type="text">
+
+					<label>Seats per row:</label>
+					<input id="width" type="text">
+
+					<label>Control 1:</label>
+					<input id="control1" type="text">
+
+					<label>Control 2:</label>
+					<input id="control2" type="text">
+					<svg height = "100" width = "100">
+						<rect height = "100" width = "100" fill = "pink"></rect>
+						<rect id = "control" x = "1" y = "1" height = "20" width = "20" rx = "20" ry = "20" fill = "blue"></rect>
+					</svg></br>
+					<label>Row numbering:</label>
+					<select id = "rowStrategy">
+						<option value = '1'>Ordinary(1 2 3...)</option>
+						<option value = '2'>Even(2 4 6...)</option>
+						<option value = '3'>Odd(1 3 5...)</option>
+						<option value = '4'>Alphabet(A B C...)</option>
+					</select><br/>
+
+					<label>Column numbering:</label>
+					<select id = "colStrategy">
+						<option value = '1'>Ordinary(1 2 3...)</option>
+						<option value = '2'>Even(2 4 6...)</option>
+						<option value = '3'>Odd(1 3 5...)</option>
+						<option value = '4'>Alphabet(A B C...)</option>
+					</select><br/>
+
+					<button id = "draw">Create Zone</button>
+			</div>
+		</div>
+	</div>
+	<div class="container">
+		<div class="main">
+			<div id="areaDialog" title="Dialog Form">
+					<label>Area Name:</label>
+					<input id="areaName" type="text">
+					<label>Floor number:</label>
+					<select id = "floorNumber"></select>
+					<button id = "addArea">Create area</button>
+			</div>
+		</div>
+	</div>
+	<div class="container">
+		<div class="main">
+			<div id="layoutDialog" title="Dialog Form">
+					<label>Layout Name:</label>
+					<input id="layoutName" type="text">
+					<label>Floor number:</label>
+					<input id = "nFloors" type = "text" value = "0">
+					<button id = "start">Start drawing</button>
+			</div>
+		</div>
+	</div>
+
+
+	<button id = "newLayout">Create new Layout</button>
+	<div id = "drawingLayout">
+		<input type = "hidden" id = "hidden"/>
+		<input type = "hidden" id = "remove"/>
+
+		<button id = "createZone" >Create new zone</button>
+		<button id = "createArea">Create new area</button>
+
+		<button onclick = "rotateMode()"> rotate </button>
+		<button onclick = "translateMode()"> move </button>
+		<button onclick = "removeMode()"> remove </button>
+		<button onclick = "save()">save</button>
+		<button onclick = "testLoad()">load</button>
+		<button onclick = "zoomIn()">Zoom in</button>
+		<button onclick = "zoomOut()">Zoom out</button>
+		<select id = "floor"></select>
+		<button id = "floorFilter">Filter</button>;
+		<svg id = "mainPanel" height = "1000" width = "1000">
+			<rect height = "1000" width = "1000" stroke = "black" stroke-width = "20" fill = "white"></rect>
+			<g id = "mainShape" height = "1000" width = "1000" transform = "matrix(1 0 0 1 0 0)">
+				<rect height = "1000" width = "1000" stroke = "blue" stroke-width = "5" fill = "white"></rect>
+			</g>
+		</svg>
+	</div>
+		
+	</body>
+</html>
